@@ -1,0 +1,158 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\author{Nicholas Allio \and Daniel Thul}
+\title{Concurrent Programming Project 2 Plan}
+\begin{document}
+\maketitle
+
+\section{Tuple Space}
+\begin{verbatim}
+naive:
+LockObject lock
+List/Array/... tuplespace
+
+operation get(pattern)
+	synchronize on lock
+		while not matches(pattern)
+			wait on lock
+		tuple = matches(pattern)
+		remove tuple from tuplespace
+	return tuple
+
+operation read(pattern)
+	synchronize on lock
+		while not matches(pattern)
+			wait on lock
+		tuple = matches(pattern)
+	return tuple
+
+operation put(tuple)
+	synchronize on lock
+		add tuple to tuplespace
+		notify all threads waiting on lock
+
+better?:
+LockObject readlock, writelock
+List/Array/... tuplespace
+
+operation get(pattern)
+	synchronize on lock
+		while not matches(pattern)
+			wait on lock
+		tuple = matches(pattern)
+		remove tuple from tuplespace
+	return tuple
+
+operation read(pattern)
+	synchronize on lock
+		while not matches(pattern)
+			wait on lock
+		tuple = matches(pattern)
+	return tuple
+
+operation put(tuple)
+	synchronize on lock
+		add tuple to tuplespace
+		notify all threads waiting on lock
+\end{verbatim}
+
+\section{Chat System}
+\begin{verbatim}
+Server Tuple:
+('server', num_channels, num_rows)
+
+Channel Tuple:
+('channel', channel_id, channel_name, num_listeners, oldest_message_id, newest_message_id, ...?)
+
+Message Tuple:
+('message', channel_name, msg_id_per_channel, message, times_to_be_read...?)
+
+Writer Lock Tuple:
+('writerlock')
+
+AnyType dont_care
+
+class ChatServer
+	integer rows
+
+	operation constructor(tmp_rows, channel_names)
+		rows <- tmp_rows
+		postnote('server', length of channel_names, rows)
+		integer i = 1
+		for each channel_name in channel_names
+			postnote('channel', i, channel_name, 0, 0, 0)
+
+	operator constructor()
+		readnote('server', dont_care, rows)
+
+	operation getChannels
+		integer num_channels
+		String[] channel_names
+		readnote('server', num_channels, dont_care)
+		for i from 1 to num_channels
+			String channel_name
+			readnote('channel', i=, channel_name, dont_care, dont_care, ...)
+			add channel_name to channel_names
+		return channel_names
+
+	operation openConnection(channel_name)
+		return new ChatListener(channel_name)
+
+	operation writeMessage(channel_name, message)
+		removenote('writerlock')
+		integer num_listeners, newest_message_id, oldest_message_id, channel_id
+		removenote('channel', channel_id, channel_name=, num_listeners, oldest_message_id, newest_message_id)
+		integer num_messages <- newest_message_id - oldest_message_id
+		if num_messages >= rows
+			postnote('channel', channel_id, channel_name, num_listeners, oldest_message_id, newest_message_id)
+			removenote('message', channel_name=, oldest_message_id=, dont_care, 0)
+			removenote('channel', channel_id, channel_name=, num_listeners, oldest_message_id=, newest_message_id=)
+			oldest_message_id <- oldest_message_id + 1
+		postnote('message', channel_name, newest_message_id, message, num_listeners)
+		newest_message_id <- newest_message_id + 1
+		postnote('channel', channel_id, channel_name, num_listeners, oldest_message_id, newest_message_id)
+		postnote('writerlock')
+\end{verbatim}
+
+
+\begin{verbatim}
+class ChatListener
+	string channel_name
+	integer next_message_id
+	
+	operation constructor(tmp_channel_name)
+		channel_name <- tmp_channel_name
+		integer num_listeners, newest_message_id, channel_id
+		removenote('channel', channel_id, channel_name=, num_listeners, next_message_id, newest_message_id)
+		for i from next_message_id to newest_message_id - 1
+			string message
+			integer times_to_be_read
+			removenote('message', channel_name=, i=, message, times_to_be_read)
+			times_to_be_read <- times_to_be_read + 1
+			postnote('message', channel_name, i, message, times_to_be_read)
+		num_listeners <- num_listeners + 1
+		postnote('channel', channel_id, channel_name, num_listeners, next_message_id, newest_message_id)
+
+	operation getNextMessage
+		string message
+		integer times_to_be_read
+		removenote('message', channel_name=, next_message_id=, message, times_to_be_read)
+		times_to_be_read <- times_to_be_read - 1
+		postnote('message', channel_name, next_message_id, message, times_to_be_read)
+		next_message_id <- next_message_id + 1
+
+	operation closeConnection
+		integer num_listeners, oldest_message_id, newest_message_id, channel_id
+		removenote('channel', channel_id, channel_name=, num_listeners, oldest_message_id, newest_message_id)
+		for i from next_message_id to newest_message_id - 1
+			string message
+			integer times_to_be_read
+			removenote('message', channel_name=, i=, message, times_to_be_read)
+			times_to_be_read <- times_to_be_read - 1
+			postnote('message', channel_name, i, message, times_to_be_read)
+		num_listeners <- num_listeners - 1
+		postnote('channel', channel_id, channel_name, num_listeners, oldest_message_id, newest_message_id)
+\end{verbatim}
+
+\end{document}
