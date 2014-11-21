@@ -8,13 +8,21 @@
 
 \section{Tuple Space}
 
+\subsection{public LocalTupleSpace()}
 
+Tuple space is implemented using a single common Lock for every operations: in this way every operation is performed in mutual exclusion.
+Tuples are stored in a Map structure where the name of the tuple is used as Key, and as value is allocated an array of all tuples with that name.
 
 \begin{verbatim}
-naive:
 LockObject lock
 Map<String, ArrayList<Tuple>> tuplespace
+\end{verbatim}
 
+\subsection{public String[] get(String... pattern)}
+
+Remove tuple operation will block until the correct tuple, that matches the given pattern, is retrieved from the tuple space; once the match is intercepted, values is stored and tuple is removed from the tuple space
+
+\begin{verbatim}
 operation get(pattern)
 	synchronize on lock
 		while not matches(pattern)
@@ -22,38 +30,26 @@ operation get(pattern)
 		tuple = matches(pattern)
 		remove tuple from tuplespace
 	return tuple
+\end{verbatim}
 
+\subsection{public String[] read(String... pattern)}
+
+Read operation works similarly to the get operation with the only difference that is not removing the tuple once it has read it.
+
+\begin{verbatim}
 operation read(pattern)
 	synchronize on lock
 		while not matches(pattern)
 			wait on lock
 		tuple = matches(pattern)
 	return tuple
+\end{verbatim}
 
-operation put(tuple)
-	synchronize on lock
-		add tuple to tuplespace
-		notify all threads waiting on lock
+\subsection{public void put(String... tuple)}
 
-better?:
-LockObject readlock, writelock
-List/Array/... tuplespace
+Once a tuple is inserted in the tuple space, this method notifies all threads waiting on a lock that a new tuple has been inserted; if no match is then catch, readers will come to the wait state.
 
-operation get(pattern)
-	synchronize on lock
-		while not matches(pattern)
-			wait on lock
-		tuple = matches(pattern)
-		remove tuple from tuplespace
-	return tuple
-
-operation read(pattern)
-	synchronize on lock
-		while not matches(pattern)
-			wait on lock
-		tuple = matches(pattern)
-	return tuple
-
+\begin{verbatim}
 operation put(tuple)
 	synchronize on lock
 		add tuple to tuplespace
@@ -62,33 +58,38 @@ operation put(tuple)
 
 \section{Chat System}
 
+The chat system uses three different kind of tuples:
+
+\textit{Server Tuple} is a single tuple that identifies the server with the number of channels and the maximum number of row that the buffer can contain:
 \begin{verbatim}
-Server Tuple:
 ('server', num_channels, num_rows)
+\end{verbatim}
 
-Channel Tuple:
+\textit{Channel Tuple} 
+\begin{verbatim}
 ('channel', channel_id, channel_name, num_listeners, oldest_message_id, newest_message_id, ...?)
+\end{verbatim}
 
-Message Tuple:
+\textit{Message Tuple}
+\begin{verbatim}
 ('message', channel_name, msg_id_per_channel, message, times_to_be_read...?)
+\end{verbatim}
 
-Writer Lock Tuple:
+\textit{Writer Lock}
+\begin{verbatim}
 ('writerlock')
-
-AnyType dont_care
-
 \end{verbatim}
 
 \subsection{Class ChatServer}
 
+Number of rows that every newly connected user should read is stored in a global variable
 \begin{verbatim}
-class ChatServer
-	integer rows
+integer rows
 \end{verbatim}
 
 \subsubsection{public ChatServer(TupleSpace t, int rows, String[] channelNames)}
 
-Complex constructor initialize the tuple space posting tuples in a number equal to the size of the channels, with num_listeners, oldest_message_id, newest_message_id setted to 0; channel_name is setted accordingly to the names given in as argument of the function , and an unique identifier is assigned to each of them.
+Complex constructor initialize the tuple space posting tuples in a number equal to the size of the channels, with NumListeners, Oldest\_MessageID, NewestMessageID setted to 0; ChannelName is setted accordingly to the names given in as argument of the function , and an unique identifier is assigned to each of them.
 It also posts the tuple related to the server in which it sets the number of channels and the number of the buffer's size for messages that the server must keep in memory until everyone has read them.
 
 \begin{verbatim}
@@ -148,8 +149,8 @@ It creates a new instance of \textit{ChatListener} with the given channel name.
 It iterates over the list of channels reading the name of each of them and collecting them into an array.
 
 \begin{verbatim}
-	operation getChannels
-		integer num_channels
+operation getChannels
+  integer num_channels
 		String[] channel_names
 		readnote('server', num_channels, dont_care)
 		for i from 1 to num_channels
@@ -167,7 +168,7 @@ string channel_name
 integer next_message_id
 \end{verbatim}
 
-\subsubsection{public ChatListener(String channel_name)}
+\subsubsection{public ChatListener(String channel\_name)}
 
 When a user connects to the server, an instance of ChatListener is created and all messages in the buffer have to be send to the newly connected user. In addition to this operation, because of the new user registration at the chat, two information should be updated: number of listeners on the server is incremented and, for each message in the channel, the counter of times that each of them should be read, is incremented as well.
 
@@ -200,6 +201,10 @@ Once the message is read, the number of times that has to be read is updated.
 		postnote('message', channel_name, next_message_id, message, times_to_be_read)
 		next_message_id <- next_message_id + 1
 \end{verbatim}
+
+\subsubsection{public String getNextMessage()}
+
+When a user disconnects from the chat, all messages have to be updated because the number of times to be read should be decremented by one. This operation is performed by removing the channel tuple, in order to avoid every reader or writer to access the channel and make modifications in the meantime.
 
 \begin{verbatim}
 	operation closeConnection
