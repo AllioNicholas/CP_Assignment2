@@ -7,10 +7,13 @@
 \maketitle
 
 \section{Tuple Space}
+
+
+
 \begin{verbatim}
 naive:
 LockObject lock
-List/Array/... tuplespace
+Map<String, ArrayList<Tuple>> tuplespace
 
 operation get(pattern)
 	synchronize on lock
@@ -58,6 +61,7 @@ operation put(tuple)
 \end{verbatim}
 
 \section{Chat System}
+
 \begin{verbatim}
 Server Tuple:
 ('server', num_channels, num_rows)
@@ -73,19 +77,77 @@ Writer Lock Tuple:
 
 AnyType dont_care
 
+\end{verbatim}
+
+\subsection{Class ChatServer}
+
+\begin{verbatim}
 class ChatServer
 	integer rows
+\end{verbatim}
 
+\subsubsection{public ChatServer(TupleSpace t, int rows, String[] channelNames)}
+
+Complex constructor initialize the tuple space posting tuples in a number equal to the size of the channels, with num_listeners, oldest_message_id, newest_message_id setted to 0; channel_name is setted accordingly to the names given in as argument of the function , and an unique identifier is assigned to each of them.
+It also posts the tuple related to the server in which it sets the number of channels and the number of the buffer's size for messages that the server must keep in memory until everyone has read them.
+
+\begin{verbatim}
 	operation constructor(tmp_rows, channel_names)
 		rows <- tmp_rows
 		postnote('server', length of channel_names, rows)
 		integer i = 1
 		for each channel_name in channel_names
 			postnote('channel', i, channel_name, 0, 0, 0)
+			i <- i + 1
+\end{verbatim}
 
+\subsubsection{public ChatServer(TupleSpace t)}
+
+When a new connection with the chat server is established, only the number of rows (messages) that have to be send to the newly connected user is needed; this information can be easily retrieved by reading the \textit{ServerTuple} 
+
+\begin{verbatim}
 	operator constructor()
 		readnote('server', dont_care, rows)
+\end{verbatim}
 
+\subsubsection{public void writeMessage(String channel, String message)}
+
+Every write operation is performed one at a time in order to grant mutual exclusion, data integrity and consistency, and thread safe operations. To achieve those characteristics, a tuple is used as lock and just at the end of the function other processes have the possibility to execute that piece of code.
+Write a new message in the channel means modify which are id of the oldest and newest messages and the \textit{ChannelTuple} is needed to perform this operation; before this update is completed, availability of free space to insert messages is checked and the process either is blocked if no free space is available, or the operation can successfully be completed.
+During this write operation, the scenario when the buffer of old messages is full can occurs and that process has to wait for the insertion of the message; in order to avoid the stalemate of the application, channel is freed by post again the same tuple previously removed without modifications and process is then blocked on the next statement when it tries to remove the oldest message; in this way users can disconnect from the chat even if they have not read all messages in the channel. Process will be blocked on the remove operation until the oldest message will be removed by the process itself: at that time the channel will be blocked again in order to complete the insertion of the new message.
+If a new write operations will occur when a writer is still blocked waiting for eliminate the oldest message, they will be blocked on the writeLock because only one writer at a time is allowed inside the write operation.
+
+\begin{verbatim}
+	operation writeMessage(channel_name, message)
+	removenote('writerlock')
+	integer num_listeners, newest_message_id, oldest_message_id, channel_id
+	removenote('channel', channel_id, channel_name=, num_listeners, oldest_message_id, newest_message_id)
+	integer num_messages <- newest_message_id - oldest_message_id
+	if num_messages >= rows
+		postnote('channel', channel_id, channel_name, num_listeners, oldest_message_id, newest_message_id)
+		removenote('message', channel_name=, oldest_message_id=, dont_care, 0)
+		removenote('channel', channel_id, channel_name=, num_listeners, oldest_message_id=, newest_message_id=)
+		oldest_message_id <- oldest_message_id + 1
+	postnote('message', channel_name, newest_message_id, message, num_listeners)
+	newest_message_id <- newest_message_id + 1
+	postnote('channel', channel_id, channel_name, num_listeners, oldest_message_id, newest_message_id)
+	postnote('writerlock')
+\end{verbatim}
+
+\subsubsection{public ChatListener openConnection(String channel)}
+	
+It creates a new instance of \textit{ChatListener} with the given channel name.
+
+\begin{verbatim}
+	operation openConnection(channel_name)
+		return new ChatListener(channel_name)
+\end{verbatim}
+
+\subsubsection{public String[] getChannels()}
+
+It iterates over the list of channels reading the name of each of them and collecting them into an array.
+
+\begin{verbatim}
 	operation getChannels
 		integer num_channels
 		String[] channel_names
@@ -95,32 +157,21 @@ class ChatServer
 			readnote('channel', i=, channel_name, dont_care, dont_care, ...)
 			add channel_name to channel_names
 		return channel_names
-
-	operation openConnection(channel_name)
-		return new ChatListener(channel_name)
-
-	operation writeMessage(channel_name, message)
-		removenote('writerlock')
-		integer num_listeners, newest_message_id, oldest_message_id, channel_id
-		removenote('channel', channel_id, channel_name=, num_listeners, oldest_message_id, newest_message_id)
-		integer num_messages <- newest_message_id - oldest_message_id
-		if num_messages >= rows
-			postnote('channel', channel_id, channel_name, num_listeners, oldest_message_id, newest_message_id)
-			removenote('message', channel_name=, oldest_message_id=, dont_care, 0)
-			removenote('channel', channel_id, channel_name=, num_listeners, oldest_message_id=, newest_message_id=)
-			oldest_message_id <- oldest_message_id + 1
-		postnote('message', channel_name, newest_message_id, message, num_listeners)
-		newest_message_id <- newest_message_id + 1
-		postnote('channel', channel_id, channel_name, num_listeners, oldest_message_id, newest_message_id)
-		postnote('writerlock')
 \end{verbatim}
 
 
+\subsection{Class ChatListener}
+
 \begin{verbatim}
-class ChatListener
-	string channel_name
-	integer next_message_id
-	
+string channel_name
+integer next_message_id
+\end{verbatim}
+
+\subsubsection{public ChatListener(String channel_name)}
+
+When a user connects to the server, an instance of ChatListener is created and all messages in the buffer have to be send to the newly connected user. In addition to this operation, because of the new user registration at the chat, two information should be updated: number of listeners on the server is incremented and, for each message in the channel, the counter of times that each of them should be read, is incremented as well.
+
+\begin{verbatim}	
 	operation constructor(tmp_channel_name)
 		channel_name <- tmp_channel_name
 		integer num_listeners, newest_message_id, channel_id
@@ -133,7 +184,14 @@ class ChatListener
 			postnote('message', channel_name, i, message, times_to_be_read)
 		num_listeners <- num_listeners + 1
 		postnote('channel', channel_id, channel_name, num_listeners, next_message_id, newest_message_id)
+\end{verbatim}
 
+\subsubsection{public String getNextMessage()}
+
+Next message to be shown is retrieved, showed and updated before post it again into the tuple space. Process will block if no messages are available since is always requiring messages from a specific channel name and a specific id for the message.
+Once the message is read, the number of times that has to be read is updated.
+
+\begin{verbatim}
 	operation getNextMessage
 		string message
 		integer times_to_be_read
@@ -141,7 +199,9 @@ class ChatListener
 		times_to_be_read <- times_to_be_read - 1
 		postnote('message', channel_name, next_message_id, message, times_to_be_read)
 		next_message_id <- next_message_id + 1
+\end{verbatim}
 
+\begin{verbatim}
 	operation closeConnection
 		integer num_listeners, oldest_message_id, newest_message_id, channel_id
 		removenote('channel', channel_id, channel_name=, num_listeners, oldest_message_id, newest_message_id)
