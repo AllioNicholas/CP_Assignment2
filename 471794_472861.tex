@@ -1,0 +1,107 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\author{Nicholas Allio \and Daniel Thul}
+\title{Concurrent Programming - Assignment 2 Plan}
+\begin{document}
+\maketitle
+
+\section{Tuple Space}
+
+\subsection{Implementation Considerations}
+
+Tuple space is implemented using a single shared Object as lock on which every operation is synchronized: in this way every operation is performed in mutual exclusion.
+Tuples are stored in a \textit{Map} structure where the name of the tuple is used as Key, and an array of all tuples with that same name is allocated as value field.
+
+\paragraph{get} Synchronized on the shared lock, this operation will wait again on the same lock in a while loop, untill the match condition is satisfied; then the tuple is retrieved and removed from the tuple space.
+
+\paragraph{read} Similar behaviour to the \textit{get} operation, but in this case tuple is not removed frmo the space but just read.
+
+\paragraph{put} Syncronized on the shared lock, this operation inserts the tuple in the tuple space and notify all threads waiting on the lock that a new entry is available. In this way all blocked \textit{get} or \textit{read} operation will proceed to check if the tuple sought has been inserted.
+
+\section{Chat System}
+
+\subsection{Implementation Considerations}
+The chat system uses three different kind of tuples:\par
+
+\textit{Server Tuple}: is a single tuple that identifies the server with the number of channels and the maximum number of row that the buffer can contain.
+
+\begin{verbatim}
+('server', num_channels, num_rows)
+\end{verbatim}
+
+
+\textit{Channel Tuple}: each channel is identified by this tuple where id and name are stored; additional informations are stored inside like number of listeners, oldest message id, newest message id; message ids are used to caculate the current status of the system buffer, in order to allow insertion of new messages and deliver a proper number of old messages to new users connected. 
+\begin{verbatim}
+('channel', channel_id, channel_name, num_listeners,
+                        oldest_message_id, newest_message_id)
+\end{verbatim}
+
+\textit{Message Tuple}: tuple that identifies a message; it stores the channel name belongs to and the relative id for that channel, the number of times that has to be read and, of course, the message.
+\begin{verbatim}
+('message', channel_name, msg_id_per_channel, msg, times_to_be_read)
+\end{verbatim}
+
+\textit{Writer Lock}: this tuple is used only by \textit{writeMessage} operation, in order to grant mutual exclusion among several writers and allow users to disconnect from the chat.
+\begin{verbatim}
+('writerlock')
+\end{verbatim}
+
+\subsection{Class ChatServer}
+
+This class manages users and messages of the chat system. It utilizes a global integer variable, called \textit{rows}, which stores the size of the buffer of every channel that, at the same time, corrisponds to the number of messages to be delivered to all newly connected users.
+
+\paragraph{ChatServer (connect)} When a new connection with the chat server is established, only the number of rows (messages) that have to be sent to the newly connected user is needed; this information can be easily retrieved by reading the \textit{ServerTuple} 
+
+\paragraph{ChatServer (create)} This constructor initializes the tuple space by posting tuples in a number equal to the size of the channels and with number of listeners, oldest message id and newest message id setted to zero; each channel name is setted accordingly to the names given as argument of the function, and an unique identifier is assigned to each of them.
+The tuple related to the server is inserted with number of channel equal to the number of channel names and number of rows equal to the number of rows given as parameter.
+
+
+\paragraph{writeMessage} Every write operation is performed one at a time in order to grant mutual exclusion, data integrity, consistency, and thread safe operations. To achieve those characteristics, a tuple is used as lock that only after completed every task is released  and other processes have the possibility to execute that piece of code.
+Write a new message in the channel means modify id of the oldest and newest messages and the \textit{ChannelTuple} is removed to perform this operation; before this update is completed, availability of free space is checked and the process either is blocked if no free space is available, or the operation can proceed with the insertion.
+If buffer of messages is full, process has to wait before the insertion of the message; in order to avoid the stalemate of the application, channel is released by post again the \textit{ChannelTuple} unchanged and process will then blocked on following statement when it tries to remove the oldest message; in this way the process will wait untill the oldest message is read by every user in the channel and, at that point, remove it in order to get free space to insert the new one.
+Since \textit{ChannelTuple} is available again in the tuple space, users have the possibility to disconnect from the chat even if they have some unread messages remaining.
+If other write operations occur in the meantime, they will block on the \textit{writeLock} untill the blocked write operation will terminate.
+Before new message is inserted, \textit{ChannelTuple} is removed again in order to avoid access the channel to other processes and then inserted as last operation with id of oldest and newest messages updated.
+
+\small
+\begin{verbatim}
+	operation writeMessage(channel_name, msg)
+	removenote('writerlock')
+	integer num_listeners, newest_message_id, oldest_message_id, channel_id
+	removenote('channel', channel_id, channel_name=, num_listeners,
+                                oldest_message_id, newest_message_id)
+	integer num_messages <- newest_message_id - oldest_message_id
+	if num_messages >= rows
+	  postnote('channel', channel_id, channel_name, num_listeners,
+                                oldest_message_id, newest_message_id)
+	  removenote('message', channel_name=, oldest_message_id=, dont_care, 0)
+	  removenote('channel', channel_id, channel_name=, num_listeners,
+                                oldest_message_id=, newest_message_id=)
+	  oldest_message_id <- oldest_message_id + 1
+	postnote('message', channel_name, newest_message_id, msg, num_listeners)
+	newest_message_id <- newest_message_id + 1
+	postnote('channel', channel_id, channel_name, num_listeners,
+                                oldest_message_id, newest_message_id)
+	postnote('writerlock')
+\end{verbatim}
+\normalsize
+
+\paragraph{openConnection} It opens a new connection to the given channel by returning a newly created instance of \textit{ChatListener} with the same given name.
+
+\paragraph{getChannels} It iterates over the list of channels, reading the name of each and collecting them into the returnrd array. The number of channels is retrieved by reading the \textit{ServerTuple}
+
+\subsection{Class ChatListener}
+
+This class is responsible for the user connection/disconnection of the channel and the correct massages delivery. Two global variable are needed in order to provide those functionalities: \textit{channel\_name} and \textit{next\_message\_id}. The former is needed to create a connection with the specific channel, the latter tells what message is requested to be read.
+
+\paragraph{ChatListener} When a user connects to a channel, an instance of ChatListener is created and all information about the channel should be updated: number of channel listeners is incremented and, for each message already in the channel buffer, the counter of times that each of them has yet to be read, is incremented as well.
+\textit{ChannelTuple} is removed from the tuple space before updating every message in a way that other processes can not eihter read or write messages in that particular channel.
+
+\paragraph{getNextMessage} This operation simply removes the tuple with message id equal to \textit{next\_message\_id} from the channel and updates time to be read value before post it again into the tuple space. Process will block if no messages are available since is always requiring messages from a specific channel name and a specific id for the message.
+Once the message is read, the \textit{next\_message\_id} is updated in order to read the next message.
+
+\paragraph{closeConnection} When a user disconnects from the channel, all messages have to be updated because the number of times to be read should be decremented by one. This operation is performed by removing the \textit{ChannelTuple}, in order to avoid every reader or writer to access the channel and make modifications in the meantime. Last update before posting back the \textit{ChannelTuple} is to decrement the number of channel listeners.
+
+
+\end{document}
