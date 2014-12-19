@@ -14,13 +14,13 @@ public class LocalTupleSpace implements TupleSpace {
 	public String[] get(String... pattern) {
 		Tuple tuple = null;
 		synchronized (lock) {
-			try {
-				while ((tuple = match(pattern)) == null) {
+			while ((tuple = match(pattern)) == null) {
+				try {
 					lock.wait();
 				}
-			}
-			catch (InterruptedException e) {
-				// Ignore
+				catch (InterruptedException e) {
+					// Ignore
+				}
 			}
 			remove(tuple);
 		}
@@ -30,13 +30,13 @@ public class LocalTupleSpace implements TupleSpace {
 	public String[] read(String... pattern) {
 		Tuple tuple = null;
 		synchronized (lock) {
-			try {
-				while ((tuple = match(pattern)) == null) {
+			while ((tuple = match(pattern)) == null) {
+				try {
 					lock.wait();
 				}
-			}
-			catch (InterruptedException e) {
-				// Ignore
+				catch (InterruptedException e) {
+					// Ignore
+				}
 			}
 		}
 		return tuple.fields;
