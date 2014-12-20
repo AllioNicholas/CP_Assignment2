@@ -18,6 +18,7 @@ public class ChatServer {
 		for (int i = 0; i < channelNames.length; ++i) {
 			ts.put("channel", String.valueOf(i), channelNames[i], "0", "0", "0");
 			ts.put("writerlock", channelNames[i]);
+			ts.put("connectlock", channelNames[i]);
 		}
 	}
 
@@ -41,6 +42,7 @@ public class ChatServer {
 	}
 
 	public void writeMessage(String channel, String message) {
+		ts.get("connectlock", channel);
 		ts.get("writerlock", channel);
 		String channel_id; int num_listeners, oldest_message_id, newest_message_id;
 		String[] channel_tuple = ts.get("channel", null, channel, null, null, null);
@@ -57,6 +59,7 @@ public class ChatServer {
 		newest_message_id += 1;
 		ts.put("channel", channel_id, channel, String.valueOf(num_listeners), String.valueOf(oldest_message_id), String.valueOf(newest_message_id));
 		ts.put("writerlock", channel);
+		ts.put("connectlock", channel);
 	}
 
 	public ChatListener openConnection(String channel) {

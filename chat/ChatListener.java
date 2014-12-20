@@ -10,6 +10,7 @@ public class ChatListener {
 	public ChatListener(final TupleSpace ts, final String channel_name) {
 		this.ts = ts;
 		this.channel_name = channel_name;
+		ts.get("connectlock", channel_name);
 		String channel_id, num_listeners, newest_message_id;
 		final String[] tuple = ts.get("channel", null, channel_name, null, null, null);
 		channel_id = tuple[1]; num_listeners = tuple[3]; next_message_id = tuple[4]; newest_message_id = tuple[5];
@@ -22,6 +23,7 @@ public class ChatListener {
 		}
 		num_listeners = String.valueOf(Integer.parseInt(num_listeners) + 1);
 		ts.put("channel", channel_id, channel_name, num_listeners, next_message_id, newest_message_id);
+		ts.put("connectlock", channel_name);
 	}
 
 	public String getNextMessage() {
