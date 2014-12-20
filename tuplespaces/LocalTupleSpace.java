@@ -11,6 +11,19 @@ public class LocalTupleSpace implements TupleSpace {
 	Object lock = new Object();
 	Map<String, List<Tuple>> tupleMap = new HashMap<String, List<Tuple>>();
 	
+	@Override
+	public String toString() {
+		final StringBuilder str = new StringBuilder();
+		synchronized (lock) {
+			for (final List<Tuple> tuples : tupleMap.values()) {
+				for (final Tuple tuple : tuples) {
+					str.append(tuple.toString() + "\n");
+				}
+			}
+		}
+		return str.toString();
+	}
+	
 	public String[] get(String... pattern) {
 		Tuple tuple = null;
 		synchronized (lock) {
@@ -39,7 +52,10 @@ public class LocalTupleSpace implements TupleSpace {
 				}
 			}
 		}
-		return tuple.fields;
+		// Return a copy of the fields
+		String[] fields = new String[tuple.fields.length];
+		System.arraycopy(tuple.fields, 0, fields, 0, tuple.fields.length);
+		return fields;
 	}
 
 	public void put(String... fields) {
@@ -91,7 +107,6 @@ public class LocalTupleSpace implements TupleSpace {
 		final String[] fields;
 		
 		Tuple(String... fields) {
-			// TODO: do we need a copy?
 			// TODO: check for null values?
 			this.fields = new String[fields.length];
 			System.arraycopy(fields, 0, this.fields, 0, fields.length);
@@ -107,6 +122,17 @@ public class LocalTupleSpace implements TupleSpace {
 					return false;
 			}
 			return true;
+		}
+		
+		@Override
+		public String toString() {
+			final StringBuilder str = new StringBuilder();
+			str.append("(");
+			for (final String field : fields) {
+				str.append(field + ", ");
+			}
+			str.append(")");
+			return str.toString();
 		}
 	}
 }

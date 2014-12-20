@@ -35,9 +35,9 @@ public class ChatListener {
 	}
 
 	public void closeConnection() {
-		String channel_id, num_listeners, newest_message_id;
+		String channel_id, num_listeners, oldest_message_id, newest_message_id;
 		final String[] tuple = ts.get("channel", null, channel_name, null, null, null);
-		channel_id = tuple[1]; num_listeners = tuple[3]; next_message_id = tuple[4]; newest_message_id = tuple[5];
+		channel_id = tuple[1]; num_listeners = tuple[3]; oldest_message_id = tuple[4]; newest_message_id = tuple[5];
 		for (int i = Integer.parseInt(next_message_id); i < Integer.parseInt(newest_message_id); ++i) {
 			String message, times_to_be_read;
 			final String[] message_tuple = ts.get("message", channel_name, String.valueOf(i), null, null);
@@ -46,6 +46,6 @@ public class ChatListener {
 			ts.put("message", channel_name, String.valueOf(i), message, times_to_be_read);
 		}
 		num_listeners = String.valueOf(Integer.parseInt(num_listeners) - 1);
-		ts.put("channel", channel_id, channel_name, num_listeners, next_message_id, newest_message_id);
+		ts.put("channel", channel_id, channel_name, num_listeners, oldest_message_id, newest_message_id);
 	}
 }

@@ -6,6 +6,11 @@ public class ChatServer {
 	final int rows;
 	final TupleSpace ts;
 	
+	@Override
+	public String toString() {
+		return ts.toString();
+	}
+	
 	public ChatServer(TupleSpace ts, int rows, String[] channelNames) {
 		this.ts = ts;
 		this.rows = rows;
